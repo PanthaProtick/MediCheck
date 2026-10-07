@@ -1,62 +1,94 @@
-# RxVerify - synthetic availability verification MVP
+# RxVerify v2 — Multi-User Medicine Availability Verification
 
-A local React/FastAPI demo connects one caregiver request to one immutable simulated staff observation. It preserves the recorded stock claim and returns a sufficient, insufficient, or unresolved answer qualified by observation time. Synthetic data and attributed staff reports do not establish real stock accuracy, clinical suitability, reservations, or availability on arrival.
+RxVerify is an availability verification platform connecting caregiver requests to immutable, authenticated staff observations across participating pharmacies. It compares digital stock claims with physical observations, evaluating discrepancies and returning deterministic sufficient, insufficient, or unresolved outcomes qualified by exact observation timestamps.
 
-## Start the built demo
+> **Operational Boundary Notice:** Physical stock checks verify current shelf count at the recorded instant. They do not reserve stock, guarantee availability on arrival, or provide clinical dispensation approvals.
 
-Build from `frontend/`:
+---
 
+## Key Features in v2
+
+- **Managed Authentication & Identity:** Clerk integration with JWT Bearer sessions (`/me`) and local conflict-safe identity mapping.
+- **Multi-Pharmacy Workflows:** Independent pharmacy queues (`PHARM-A`, `PHARM-B`) with server-enforced staff membership isolation.
+- **Strict Cross-Tenant Security:** Caregiver enquiries are strictly isolated; cross-owner read attempts return `404 Not Found` (never 403) to prevent UUID existence probing.
+- **Immutable Transactions & Replay Protection:** Conflicting observation submissions return `409 Conflict`; identical submissions from the same staff member are idempotent.
+- **Account-Bound Recovery:** `sessionStorage` recovery intents are strictly scoped to the local user UUID (`rxverify_intent_v2_${userId}`). No bearer tokens are persisted by the client.
+- **PostgreSQL / Neon Engine:** Schema migrations (`001_multi_user.sql`) and bootstrap seeding with full ACID transaction guarantees.
+- **Bounded Public Surface:** 16KiB body ceiling (HTTP 413) and single-worker sliding rate limiter (HTTP 429 + `Retry-After`).
+
+---
+
+## Quickstart
+
+### 1. Build Frontend
 ```powershell
+cd frontend
+npm install
 npm run build
 ```
 
-From `backend/`, configure backend-only settings and launch:
-
+### 2. Run Backend
+From `backend/`:
 ```powershell
-$env:ENV = 'demo'
-$env:DEMO_DATABASE_PATH = 'E:/Hackathon Demo/backend/data/demo.sqlite3'
-$env:DEMO_STAFF_TOKEN = '<choose-a-private-demo-token>'
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser.
 
-Replace the token placeholder with your own private demo credential. Enter the same value manually in the staff password field. There is no built-in or prefilled credential. Existing `.env` values can also supply these settings; do not commit real credentials. Startup rejects an empty token or relative database path. Demo mode also requires `frontend/dist/index.html`.
+In local development mode without Clerk keys set, the application automatically uses `DevFallbackAuthBridge`, providing a one-click account switcher (Caregiver 1, Caregiver 2, Staff PHARM-A, Staff PHARM-B).
 
-Open `http://127.0.0.1:8000/`. Development mode can run without a build; `npm run dev` uses the existing `/api` loopback proxy. The application requires no remote model, pharmacy integration, database, or font service.
+---
 
-## Verification
+## Operator Commands
 
-From `backend/`:
-
+### Database Migrations & Seeding (PostgreSQL / Neon)
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+python backend/scripts/migrate_v2.py --seed
 ```
 
-From `frontend/`:
-
+Check database schema readiness:
 ```powershell
+python backend/scripts/migrate_v2.py --check-only
+```
+
+### Staff Membership Management
+Grant pharmacy staff rights:
+```powershell
+python backend/scripts/manage_memberships.py grant caregiver1@example.com PHARM-A --role staff
+```
+
+List active memberships:
+```powershell
+python backend/scripts/manage_memberships.py list
+```
+
+Revoke staff rights:
+```powershell
+python backend/scripts/manage_memberships.py revoke caregiver1@example.com PHARM-A
+```
+
+---
+
+## Verification & Automated Test Suites
+
+### Backend Test Suite (83 Tests)
+Runs baseline v1 regression (56 tests), v2 contract freeze (6 tests), database migrations (2 tests), auth (6 tests), v2 API workflow (9 tests), and bounded surface (4 tests):
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest discover tests
+```
+
+### Frontend Transport & Recovery Tests (22 Tests)
+Runs deadline bounds, v1 compatibility, v2 transport envelopes, reporter UUID intent matching, and user-scoped recovery:
+```powershell
+cd frontend
 node --test tests/transport.test.js
-npm run build
-npm run lint
 ```
 
-Optional real-browser smoke test from `backend/` (requires local Chrome and Node):
+---
 
-```powershell
-.\.venv\Scripts\python.exe scripts/check_browser.py
-```
+## Documentation
 
-The browser script uses random loopback ports, a temporary SQLite database, test-only credential, and isolated browser profiles. The backend and transport suites also avoid the demo database. Current review: 56 backend tests and 14 frontend tests passed; the built two-context browser journey and response-loss/read-failure recovery passed. Lint exits successfully with five existing unused-import warnings in inactive template components. See [validation](docs/validation.md) for coverage and limits.
-
-## Demo and maintenance
-
-See [the runbook](docs/demo_runbook.md). An uncertain save preserves its ID and payload; use **Inspect saved outcome**. A pending/404 inspection still leaves the outcome unknown while a write may be in flight. Only explicit retries reuse the frozen ID/body. Saved reports cannot be replaced.
-
-To reset, stop the server first. From `backend/`:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/reset_demo.py
-```
-
-Reset is destructive local maintenance, restricted to `backend/data/demo.sqlite3`; no API reset endpoint exists. An exclusive-lock probe cannot establish that an idle server is stopped.
-
-Requirements and integration rules are in [the MVP](docs/mvp.md), [the contracts](docs/api_contracts.md), and [the implementation plan](tasks/implementation_plan.md).
+- **[Multi-User Demo Runbook](docs/multi_user_demo_runbook.md):** 4-minute demonstration script, operator commands, and fault procedures.
+- **[Validation Matrix](docs/multi_user_validation.md):** Empirical test evidence, invariant verification matrix, and limits.
+- **[API Contracts v2](docs/api_contracts_v2.md):** Frozen JSON wire contracts and status code matrices for all `/api/v2` endpoints.
+- **[Implementation Plan](tasks/multi_user_implementation_plan.md):** Detailed technical plan for modules P00 through P11.

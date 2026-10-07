@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: rxverify-v2
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: ENV
+        value: production
+      - key: PROJECT_NAME
+        value: "RxVerify Availability Verification MVP v2"
+      - key: DATABASE_URL
+        sync: false # Set in Render Dashboard with Neon PostgreSQL connection string
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false # Set in Render Dashboard with Clerk Publishable Key
+      - key: CLERK_SECRET_KEY
+        sync: false # Set in Render Dashboard with Clerk Secret Key
+      - key: CLERK_ISSUER
+        sync: false # Set in Render Dashboard with Clerk Issuer URL
+      - key: PUBLIC_APP_ORIGIN
+        value: "https://rxverify-v2.onrender.com"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "120"
+      - key: RATE_LIMIT_MAX_MUTATIONS
+        value: "30"
+      - key: DEMO_STAFF_TOKEN
+        value: "internal-baseline-token-do-not-use-in-v2"
+      - key: DEMO_DATABASE_PATH
+        value: "/app/backend/data/demo.sqlite3"
