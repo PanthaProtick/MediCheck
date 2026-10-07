@@ -11,9 +11,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.engine import Engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import router as api_router
+from app.api.routes_v2 import router as api_router_v2
+from app.core.auth import SessionVerifier
 from app.core.config import Settings, settings as default_settings
 from app.core.database import initialize_database
 from app.core.errors import AppError
@@ -25,6 +28,8 @@ logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
+    engine: Engine | None = None,
+    session_verifier: SessionVerifier | None = None,
 ) -> FastAPI:
     active_settings = settings or default_settings
     active_clock = clock or utc_now
@@ -42,6 +47,7 @@ def create_app(
         if not Path(active_settings.DEMO_DATABASE_PATH).is_absolute():
             raise RuntimeError("DEMO_DATABASE_PATH must be an absolute path.")
         initialize_database(active_settings.DEMO_DATABASE_PATH)
+
         if active_settings.ENV == "demo":
             if not dist_dir.exists() or not (dist_dir / "index.html").exists():
                 raise RuntimeError(
@@ -51,7 +57,7 @@ def create_app(
 
     app = FastAPI(
         title=active_settings.PROJECT_NAME,
-        version="1.0.0",
+        version="2.0.0",
         docs_url="/docs",
         redoc_url=None,
         lifespan=lifespan,
@@ -59,11 +65,16 @@ def create_app(
 
     app.state.settings = active_settings
     app.state.clock = active_clock
+    if engine is not None:
+        app.state.engine = engine
+    if session_verifier is not None:
+        app.state.session_verifier = session_verifier
 
     # Middleware for media type check and Cache-Control
     @app.middleware("http")
     async def api_middleware(request: Request, call_next):
-        if request.url.path.startswith("/api/v1") and request.method in ("PUT", "POST"):
+        is_api = request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/v2")
+        if is_api and request.method in ("PUT", "POST"):
             ct = request.headers.get("content-type", "")
             media_type = ct.split(";")[0].strip().lower()
             if media_type != "application/json":
@@ -80,7 +91,7 @@ def create_app(
                 )
 
         response = await call_next(request)
-        if request.url.path.startswith("/api/v1"):
+        if is_api or request.url.path.startswith("/api"):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -175,11 +186,16 @@ def create_app(
 
     @app.exception_handler(Exception)
     def internal_error_handler(request: Request, exc: Exception):
+        if "SQLAlchemyError" in type(exc).__name__:
+            return JSONResponse(status_code=503, content={"error": {
+                "code": "storage_unavailable", "message": "Storage is unavailable.", "fields": []
+            }}, headers={"Cache-Control": "no-store"})
         return JSONResponse(status_code=500, content={"error": {
             "code": "internal_error", "message": "Unable to process stored evidence.", "fields": []
         }}, headers={"Cache-Control": "no-store"})
 
-    # Register API router FIRST
+    # Register API routers
+    app.include_router(api_router_v2, prefix="/api/v2")
     app.include_router(api_router, prefix="/api/v1")
 
     # Serve static assets if built
