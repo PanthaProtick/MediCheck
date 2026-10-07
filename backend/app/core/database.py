@@ -3,8 +3,12 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
+from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.errors import AppError
 from app.models.schemas import BootstrapResponse
+from app.models.schemas_v2 import BootstrapResponseV2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS products (
@@ -187,3 +191,181 @@ def check_readiness(database_path: str) -> None:
             message="Database readiness check failed.",
             fields=[],
         ) from e
+
+
+def create_pg_engine(
+    database_url: str,
+    pool_size: int = 5,
+    max_overflow: int = 0,
+    pool_timeout: float = 2.0,
+) -> Engine:
+    if not database_url:
+        raise AppError(
+            status_code=503,
+            code="storage_unavailable",
+            message="DATABASE_URL is not configured.",
+            fields=[],
+        )
+    return create_engine(
+        database_url,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_pre_ping=True,
+    )
+
+
+def apply_pg_migrations(engine: Engine) -> None:
+    migration_file = Path(__file__).resolve().parent.parent.parent / "migrations" / "001_multi_user.sql"
+    if not migration_file.exists():
+        raise RuntimeError(f"Migration file not found at {migration_file}")
+
+    with migration_file.open("r", encoding="utf-8") as f:
+        sql_content = f.read()
+
+    try:
+        with engine.connect() as conn:
+            with conn.begin():
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS schema_migrations (
+                            version TEXT PRIMARY KEY,
+                            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        );
+                        """
+                    )
+                )
+                res = conn.execute(
+                    text("SELECT version FROM schema_migrations WHERE version = '001_multi_user';")
+                ).fetchone()
+                if res is None:
+                    # Execute individual statements
+                    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+                    for stmt in statements:
+                        conn.execute(text(stmt))
+                    conn.execute(
+                        text("INSERT INTO schema_migrations (version, applied_at) VALUES ('001_multi_user', NOW());")
+                    )
+    except SQLAlchemyError as exc:
+        raise AppError(
+            status_code=503,
+            code="storage_unavailable",
+            message="Failed to apply database migrations.",
+            fields=[],
+        ) from exc
+
+
+def seed_pg_database(engine: Engine, bootstrap_data: dict[str, Any] | None = None) -> None:
+    if bootstrap_data is None:
+        fixture_path = Path(__file__).resolve().parent.parent / "fixtures" / "bootstrap_v2.json"
+        if fixture_path.exists():
+            with open(fixture_path, "r", encoding="utf-8") as f:
+                bootstrap_data = json.load(f)
+
+    if not bootstrap_data:
+        return
+
+    validated = BootstrapResponseV2.model_validate(bootstrap_data)
+
+    try:
+        with engine.connect() as conn:
+            with conn.begin():
+                for pharm in validated.pharmacies:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO pharmacies (id, name, active, simulated)
+                            VALUES (:id, :name, :active, TRUE)
+                            ON CONFLICT (id) DO NOTHING;
+                            """
+                        ),
+                        {"id": pharm.id, "name": pharm.name, "active": pharm.active},
+                    )
+
+                for prod in validated.products:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO products (id, name, strength, form, unit)
+                            VALUES (:id, :name, :strength, :form, :unit)
+                            ON CONFLICT (id) DO NOTHING;
+                            """
+                        ),
+                        {
+                            "id": prod.id,
+                            "name": prod.name,
+                            "strength": prod.strength,
+                            "form": prod.form,
+                            "unit": prod.unit.value,
+                        },
+                    )
+
+                for claim in validated.claims:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO claims (
+                                id, pharmacy_id, product_id, quantity, unit,
+                                recorded_at, loaded_at, source, simulated
+                            ) VALUES (
+                                :id, :pharmacy_id, :product_id, :quantity, :unit,
+                                :recorded_at, :loaded_at, :source, TRUE
+                            )
+                            ON CONFLICT (pharmacy_id, product_id) DO NOTHING;
+                            """
+                        ),
+                        {
+                            "id": claim.id,
+                            "pharmacy_id": claim.pharmacy_id,
+                            "product_id": claim.product_id,
+                            "quantity": claim.quantity,
+                            "unit": claim.unit.value,
+                            "recorded_at": claim.recorded_at,
+                            "loaded_at": claim.loaded_at,
+                            "source": claim.source,
+                        },
+                    )
+    except SQLAlchemyError as exc:
+        raise AppError(
+            status_code=503,
+            code="storage_unavailable",
+            message="Failed to seed database.",
+            fields=[],
+        ) from exc
+
+
+def check_pg_readiness(engine: Engine) -> None:
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT version FROM schema_migrations WHERE version = '001_multi_user';")
+            ).fetchone()
+            if row is None:
+                raise AppError(
+                    status_code=503,
+                    code="storage_unavailable",
+                    message="Database schema migration 001_multi_user is not applied.",
+                    fields=[],
+                )
+            required = [
+                "users",
+                "pharmacies",
+                "pharmacy_memberships",
+                "products",
+                "claims",
+                "enquiries",
+                "observations",
+            ]
+            for tbl in required:
+                conn.execute(text(f"SELECT 1 FROM {tbl} LIMIT 1;"))
+    except AppError:
+        raise
+    except Exception as exc:
+        raise AppError(
+            status_code=503,
+            code="storage_unavailable",
+            message="Database readiness check failed.",
+            fields=[],
+        ) from exc
+
