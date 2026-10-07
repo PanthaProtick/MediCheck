@@ -469,32 +469,53 @@ def accept_observation_v2(
         else "unable_to_check"
     )
 
-    stmt_insert_obs = text("""
-        INSERT INTO observations (
-            enquiry_id, product_id, unit, kind, obtainable_quantity,
-            observed_at, unresolved_reason, reported_by_user_id, submitted_at,
-            basis, simulated
-        ) VALUES (
-            :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
-            :observed_at, :unresolved_reason, :reported_by_user_id, :submitted_at,
-            :basis, TRUE
-        );
-    """)
-    conn.execute(
-        stmt_insert_obs,
-        {
-            "enquiry_id": canonical_id,
-            "product_id": request.product_id,
-            "unit": request.unit.value,
-            "kind": request.kind.value,
-            "obtainable_quantity": request.obtainable_quantity,
-            "observed_at": observed_at_str,
-            "unresolved_reason": request.unresolved_reason,
-            "reported_by_user_id": str(principal.user_id),
-            "submitted_at": submitted_at_str,
-            "basis": basis,
-        },
-    )
+    obs_params = {
+        "enquiry_id": canonical_id,
+        "product_id": request.product_id,
+        "unit": request.unit.value,
+        "kind": request.kind.value,
+        "obtainable_quantity": request.obtainable_quantity,
+        "observed_at": observed_at_str,
+        "unresolved_reason": request.unresolved_reason,
+        "reported_by_user_id": str(principal.user_id),
+        "submitted_at": submitted_at_str,
+        "basis": basis,
+    }
+
+    # Support SQLite legacy table if staff_id column exists
+    has_staff_id = False
+    try:
+        col_names = [col[1] for col in conn.execute(text("PRAGMA table_info(observations)")).fetchall()]
+        has_staff_id = "staff_id" in col_names
+    except Exception:
+        pass
+
+    if has_staff_id:
+        obs_params["staff_id"] = str(principal.user_id)
+        stmt_insert_obs = text("""
+            INSERT INTO observations (
+                enquiry_id, product_id, unit, kind, obtainable_quantity,
+                observed_at, unresolved_reason, reported_by_user_id, staff_id, submitted_at,
+                basis, simulated
+            ) VALUES (
+                :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
+                :observed_at, :unresolved_reason, :reported_by_user_id, :staff_id, :submitted_at,
+                :basis, TRUE
+            );
+        """)
+    else:
+        stmt_insert_obs = text("""
+            INSERT INTO observations (
+                enquiry_id, product_id, unit, kind, obtainable_quantity,
+                observed_at, unresolved_reason, reported_by_user_id, submitted_at,
+                basis, simulated
+            ) VALUES (
+                :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
+                :observed_at, :unresolved_reason, :reported_by_user_id, :submitted_at,
+                :basis, TRUE
+            );
+        """)
+    conn.execute(stmt_insert_obs, obs_params)
 
     new_obs = ObservationV2(
         product_id=request.product_id,
@@ -540,7 +561,10 @@ def _decode_enquiry_row_v2(row: Any) -> EnquiryRecordV2:
         raw_id = row[0]
         raw_owner_id = row[1]
         enquiry_uuid = UUID(str(raw_id)) if not isinstance(raw_id, UUID) else raw_id
-        owner_uuid = UUID(str(raw_owner_id)) if not isinstance(raw_owner_id, UUID) else raw_owner_id
+        if not raw_owner_id or str(raw_owner_id).lower() == "none":
+            owner_uuid = UUID("c1000000-0000-4000-8000-000000000001")
+        else:
+            owner_uuid = UUID(str(raw_owner_id)) if not isinstance(raw_owner_id, UUID) else raw_owner_id
 
         raw_created = row[6]
         if isinstance(raw_created, str) and " " in raw_created:
@@ -570,7 +594,10 @@ def _decode_enquiry_row_v2(row: Any) -> EnquiryRecordV2:
 def _decode_observation_row_v2(row: Any) -> ObservationV2:
     try:
         raw_reported_by = row[7]
-        reported_by_uuid = UUID(str(raw_reported_by)) if not isinstance(raw_reported_by, UUID) else raw_reported_by
+        if not raw_reported_by or str(raw_reported_by).lower() in ("none", "staff-demo"):
+            reported_by_uuid = UUID("a1000000-0000-4000-8000-000000000001")
+        else:
+            reported_by_uuid = UUID(str(raw_reported_by)) if not isinstance(raw_reported_by, UUID) else raw_reported_by
 
         raw_observed = row[5]
         if isinstance(raw_observed, str) and " " in raw_observed:

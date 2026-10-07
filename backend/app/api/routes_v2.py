@@ -352,6 +352,24 @@ def get_staff_enquiries(
     return page
 
 
+@router.get("/pharmacies/{pharmacy_id}/queue", response_model=EnquiryPage)
+def get_pharmacy_queue(
+    pharmacy_id: str,
+    request: Request,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1000),
+    authorization: str | None = Header(None),
+):
+    principal = _get_principal(request, authorization)
+    engine = _get_engine(request)
+    clock = _get_clock(request)
+    with engine.connect() as conn:
+        page = list_pending_v2(conn, principal, pharmacy_id, limit=limit, offset=offset, clock=clock)
+    response.headers["Cache-Control"] = "no-store"
+    return page
+
+
 @router.put("/enquiries/{id}/observation", response_model=EnquiryViewV2)
 def put_observation(
     id: str,
