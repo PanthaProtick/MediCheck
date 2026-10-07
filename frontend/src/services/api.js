@@ -61,9 +61,17 @@ export const isView = (data, id) => data && data.id === id && isProduct(data.pro
 
 export const isPharmacyV2 = data => data && typeof data.id === 'string' && typeof data.name === 'string';
 
-export const isMembershipV2 = data => data && typeof data.pharmacy_id === 'string' && typeof data.role === 'string' && typeof data.status === 'string';
+export const isMembershipV2 = data => data &&
+  typeof data.pharmacy_id === 'string' &&
+  typeof data.role === 'string' &&
+  (data.status === undefined || typeof data.status === 'string') &&
+  (data.active === undefined || typeof data.active === 'boolean');
 
-export const isUserResponseV2 = data => data && typeof data.id === 'string' && typeof data.email === 'string' && Array.isArray(data.memberships) && data.memberships.every(isMembershipV2);
+export const isUserResponseV2 = data => data &&
+  (typeof data.id === 'string' || typeof data.user_id === 'string') &&
+  (data.email === undefined || typeof data.email === 'string') &&
+  Array.isArray(data.memberships) &&
+  data.memberships.every(isMembershipV2);
 
 export const isBootstrapV2 = data => data && data.simulated === true &&
   Array.isArray(data.pharmacies) && data.pharmacies.every(isPharmacyV2) &&
@@ -71,7 +79,7 @@ export const isBootstrapV2 = data => data && data.simulated === true &&
   Array.isArray(data.claims);
 
 export const isViewV2 = (data, id) => data && (!id || data.id === id) &&
-  typeof data.owner_id === 'string' &&
+  (typeof data.owner_id === 'string' || typeof data.owner_user_id === 'string') &&
   typeof data.pharmacy_id === 'string' &&
   isProduct(data.product) &&
   Number.isInteger(data.requested_quantity) &&
@@ -81,7 +89,7 @@ export const isViewV2 = (data, id) => data && (!id || data.id === id) &&
   data.simulated === true &&
   ['pending', 'answered', 'unresolved'].includes(data.status) &&
   (data.claim === null || (data.claim && typeof data.claim.pharmacy_id === 'string' && typeof data.claim.product_id === 'string')) &&
-  (data.observation === null || (data.observation && typeof data.observation.kind === 'string' && typeof data.observation.reporter_id === 'string')) &&
+  (data.observation === null || (data.observation && typeof data.observation.kind === 'string' && (typeof data.observation.reporter_id === 'string' || typeof data.observation.reported_by_user_id === 'string'))) &&
   data.answer && ['sufficient', 'insufficient', 'unresolved'].includes(data.answer.conclusion) &&
   typeof data.answer.message === 'string' && typeof data.answer.reason === 'string' &&
   (data.answer.discrepancy_units === null || Number.isInteger(data.answer.discrepancy_units)) &&
@@ -102,7 +110,7 @@ export async function getHealth(version = 'v2') {
   return fetchWithDeadline(`${V2_BASE_URL}/health`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-  }, 3000, false, data => data.status === 'ready' && ['postgres', 'sqlite'].includes(data.storage));
+  }, 3000, false, data => data.status === 'ready' && ['postgres', 'postgresql', 'sqlite'].includes(data.storage));
 }
 
 // --- V2 Auth & Bootstrap ---

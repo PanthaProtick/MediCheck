@@ -159,6 +159,13 @@ def _ensure_v2_schema_sqlite(engine: Engine) -> None:
             for stmt in schema_sql.strip().split(";"):
                 if stmt.strip():
                     conn.execute(text(stmt.strip()))
+            # Ensure columns exist if table was originally created under v1
+            enq_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(enquiries)")).fetchall()]
+            if "owner_user_id" not in enq_cols:
+                conn.execute(text("ALTER TABLE enquiries ADD COLUMN owner_user_id TEXT;"))
+            obs_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(observations)")).fetchall()]
+            if "reported_by_user_id" not in obs_cols:
+                conn.execute(text("ALTER TABLE observations ADD COLUMN reported_by_user_id TEXT;"))
 
 
 def _get_engine(request: Request) -> Engine:
@@ -234,15 +241,24 @@ def get_me(
 ):
     principal = _get_principal(request, authorization)
     response.headers["Cache-Control"] = "no-store"
+    email = f"{principal.auth_subject}@demo.local"
     return {
+        "id": str(principal.user_id),
         "user_id": str(principal.user_id),
+        "external_subject": principal.auth_subject,
         "auth_subject": principal.auth_subject,
+        "email": email,
+        "full_name": email.split("@")[0].replace("_", " ").title(),
+        "status": "active" if principal.active else "disabled",
         "active": principal.active,
         "memberships": [
             {
                 "pharmacy_id": m.pharmacy_id,
+                "pharmacy_name": f"Pharmacy {m.pharmacy_id[-1]}" if m.pharmacy_id.startswith("PHARM-") else m.pharmacy_id,
                 "role": m.role,
+                "status": "active" if m.active else "disabled",
                 "active": m.active,
+                "granted_at": m.created_at.isoformat().replace("+00:00", "Z"),
                 "created_at": m.created_at.isoformat().replace("+00:00", "Z"),
             }
             for m in principal.memberships
