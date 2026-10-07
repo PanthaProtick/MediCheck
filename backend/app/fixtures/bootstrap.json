@@ -1,0 +1,43 @@
+{
+  "pharmacy": {
+    "id": "PHARM-A",
+    "name": "Synthetic Demo Pharmacy"
+  },
+  "products": [
+    {
+      "id": "MED-A",
+      "name": "Demo Medicine A",
+      "strength": "10 mg",
+      "form": "tablet",
+      "unit": "tablet"
+    },
+    {
+      "id": "MED-B",
+      "name": "Demo Medicine A",
+      "strength": "20 mg",
+      "form": "tablet",
+      "unit": "tablet"
+    },
+    {
+      "id": "MED-C",
+      "name": "Demo Medicine C",
+      "strength": "10 mg",
+      "form": "capsule",
+      "unit": "capsule"
+    }
+  ],
+  "claims": [
+    {
+      "id": "CLAIM-A",
+      "pharmacy_id": "PHARM-A",
+      "product_id": "MED-A",
+      "quantity": 12,
+      "unit": "tablet",
+      "recorded_at": "2026-10-07T03:10:00Z",
+      "loaded_at": "2026-10-07T03:15:00Z",
+      "source": "synthetic inventory fixture",
+      "simulated": true
+    }
+  ],
+  "simulated": true
+}
