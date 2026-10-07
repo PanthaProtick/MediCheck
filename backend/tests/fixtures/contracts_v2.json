@@ -1,0 +1,1020 @@
+{
+  "contract_version": "v2",
+  "fixture_clock": "2026-10-07T05:10:00Z",
+  "test_users": {
+    "caregiver_1": {
+      "user_id": "c1000000-0000-4000-8000-000000000001",
+      "auth_subject": "user_clerk_caregiver_1",
+      "active": true,
+      "memberships": []
+    },
+    "caregiver_2": {
+      "user_id": "c2000000-0000-4000-8000-000000000002",
+      "auth_subject": "user_clerk_caregiver_2",
+      "active": true,
+      "memberships": []
+    },
+    "staff_a_1": {
+      "user_id": "a1000000-0000-4000-8000-000000000001",
+      "auth_subject": "user_clerk_staff_a_1",
+      "active": true,
+      "memberships": [
+        {
+          "pharmacy_id": "PHARM-A",
+          "role": "staff",
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "staff_a_2": {
+      "user_id": "a2000000-0000-4000-8000-000000000002",
+      "auth_subject": "user_clerk_staff_a_2",
+      "active": true,
+      "memberships": [
+        {
+          "pharmacy_id": "PHARM-A",
+          "role": "staff",
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "staff_b": {
+      "user_id": "b1000000-0000-4000-8000-000000000003",
+      "auth_subject": "user_clerk_staff_b",
+      "active": true,
+      "memberships": [
+        {
+          "pharmacy_id": "PHARM-B",
+          "role": "staff",
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "staff_multi": {
+      "user_id": "b2000000-0000-4000-8000-000000000004",
+      "auth_subject": "user_clerk_staff_multi",
+      "active": true,
+      "memberships": [
+        {
+          "pharmacy_id": "PHARM-A",
+          "role": "staff",
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z"
+        },
+        {
+          "pharmacy_id": "PHARM-B",
+          "role": "staff",
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "staff_revoked": {
+      "user_id": "e5000000-0000-4000-8000-000000000005",
+      "auth_subject": "user_clerk_staff_revoked",
+      "active": true,
+      "memberships": [
+        {
+          "pharmacy_id": "PHARM-A",
+          "role": "staff",
+          "active": false,
+          "created_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "disabled_user": {
+      "user_id": "d1000000-0000-4000-8000-000000000001",
+      "auth_subject": "user_clerk_disabled",
+      "active": false,
+      "memberships": []
+    }
+  },
+  "http_cases": [
+    {
+      "name": "health",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/health",
+        "body": null,
+        "caller": "anonymous"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ready",
+          "storage": "postgresql"
+        }
+      }
+    },
+    {
+      "name": "me_caregiver_1",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/me",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "user_id": "c1000000-0000-4000-8000-000000000001",
+          "auth_subject": "user_clerk_caregiver_1",
+          "active": true,
+          "memberships": []
+        }
+      }
+    },
+    {
+      "name": "me_staff_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/me",
+        "body": null,
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "user_id": "a1000000-0000-4000-8000-000000000001",
+          "auth_subject": "user_clerk_staff_a_1",
+          "active": true,
+          "memberships": [
+            {
+              "pharmacy_id": "PHARM-A",
+              "role": "staff",
+              "active": true,
+              "created_at": "2026-10-01T00:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bootstrap",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/bootstrap",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "pharmacies": [
+            {
+              "id": "PHARM-A",
+              "name": "Synthetic Demo Pharmacy A",
+              "active": true,
+              "simulated": true
+            },
+            {
+              "id": "PHARM-B",
+              "name": "Synthetic Demo Pharmacy B",
+              "active": true,
+              "simulated": true
+            }
+          ],
+          "products": [
+            {
+              "id": "MED-A",
+              "name": "Demo Medicine A",
+              "strength": "10 mg",
+              "form": "tablet",
+              "unit": "tablet"
+            },
+            {
+              "id": "MED-B",
+              "name": "Demo Medicine A",
+              "strength": "20 mg",
+              "form": "tablet",
+              "unit": "tablet"
+            },
+            {
+              "id": "MED-C",
+              "name": "Demo Medicine C",
+              "strength": "10 mg",
+              "form": "capsule",
+              "unit": "capsule"
+            }
+          ],
+          "claims": [
+            {
+              "id": "CLAIM-A",
+              "pharmacy_id": "PHARM-A",
+              "product_id": "MED-A",
+              "quantity": 12,
+              "unit": "tablet",
+              "recorded_at": "2026-10-07T03:10:00Z",
+              "loaded_at": "2026-10-07T03:15:00Z",
+              "source": "synthetic inventory fixture",
+              "simulated": true
+            },
+            {
+              "id": "CLAIM-B",
+              "pharmacy_id": "PHARM-B",
+              "product_id": "MED-A",
+              "quantity": 5,
+              "unit": "tablet",
+              "recorded_at": "2026-10-07T03:10:00Z",
+              "loaded_at": "2026-10-07T03:15:00Z",
+              "source": "synthetic inventory fixture",
+              "simulated": true
+            }
+          ],
+          "simulated": true
+        }
+      }
+    },
+    {
+      "name": "create_enquiry_caregiver_1",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": {
+          "pharmacy_id": "PHARM-A",
+          "product_id": "MED-A",
+          "requested_quantity": 6,
+          "unit": "tablet"
+        },
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:10:00Z",
+          "observation": null,
+          "status": "pending",
+          "answer": {
+            "conclusion": "unresolved",
+            "reason": "awaiting_check",
+            "discrepancy_units": null,
+            "message": "You requested 6 tablets. No staff check has been saved.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Recorded stock is not a physical check.",
+              "No stock reservation or clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "create_enquiry_replay_same_owner",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": {
+          "pharmacy_id": "PHARM-A",
+          "product_id": "MED-A",
+          "requested_quantity": 6,
+          "unit": "tablet"
+        },
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:10:00Z",
+          "observation": null,
+          "status": "pending",
+          "answer": {
+            "conclusion": "unresolved",
+            "reason": "awaiting_check",
+            "discrepancy_units": null,
+            "message": "You requested 6 tablets. No staff check has been saved.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Recorded stock is not a physical check.",
+              "No stock reservation or clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "create_enquiry_conflict_changed_body",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": {
+          "pharmacy_id": "PHARM-A",
+          "product_id": "MED-A",
+          "requested_quantity": 10,
+          "unit": "tablet"
+        },
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "immutable_conflict",
+            "message": "An enquiry with this ID already exists with different request parameters.",
+            "fields": ["id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "create_enquiry_cross_owner_collision",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": {
+          "pharmacy_id": "PHARM-A",
+          "product_id": "MED-A",
+          "requested_quantity": 6,
+          "unit": "tablet"
+        },
+        "caller": "caregiver_2"
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "Enquiry not found.",
+            "fields": ["id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "get_enquiry_owner",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:10:00Z",
+          "observation": null,
+          "status": "pending",
+          "answer": {
+            "conclusion": "unresolved",
+            "reason": "awaiting_check",
+            "discrepancy_units": null,
+            "message": "You requested 6 tablets. No staff check has been saved.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Recorded stock is not a physical check.",
+              "No stock reservation or clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "get_enquiry_cross_owner_hidden",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": null,
+        "caller": "caregiver_2"
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "Enquiry not found.",
+            "fields": ["id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "get_enquiry_staff_a_allowed",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": null,
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:10:00Z",
+          "observation": null,
+          "status": "pending",
+          "answer": {
+            "conclusion": "unresolved",
+            "reason": "awaiting_check",
+            "discrepancy_units": null,
+            "message": "You requested 6 tablets. No staff check has been saved.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Recorded stock is not a physical check.",
+              "No stock reservation or clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "get_enquiry_staff_b_denied",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": null,
+        "caller": "staff_b"
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "Enquiry not found.",
+            "fields": ["id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "list_own_enquiries",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries?limit=20&offset=0",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+              "pharmacy_id": "PHARM-A",
+              "product": {
+                "id": "MED-A",
+                "name": "Demo Medicine A",
+                "strength": "10 mg",
+                "form": "tablet",
+                "unit": "tablet"
+              },
+              "requested_quantity": 6,
+              "unit": "tablet",
+              "created_at": "2026-10-07T05:10:00Z",
+              "claim": {
+                "id": "CLAIM-A",
+                "pharmacy_id": "PHARM-A",
+                "product_id": "MED-A",
+                "quantity": 12,
+                "unit": "tablet",
+                "recorded_at": "2026-10-07T03:10:00Z",
+                "loaded_at": "2026-10-07T03:15:00Z",
+                "source": "synthetic inventory fixture",
+                "simulated": true
+              },
+              "simulated": true,
+              "served_at": "2026-10-07T05:10:00Z",
+              "observation": null,
+              "status": "pending",
+              "answer": {
+                "conclusion": "unresolved",
+                "reason": "awaiting_check",
+                "discrepancy_units": null,
+                "message": "You requested 6 tablets. No staff check has been saved.",
+                "limitations": [
+                  "Synthetic demonstration.",
+                  "Recorded stock is not a physical check.",
+                  "No stock reservation or clinical approval."
+                ]
+              }
+            }
+          ],
+          "limit": 20,
+          "offset": 0,
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "staff_queue_pharm_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/staff/enquiries?pharmacy_id=PHARM-A&limit=20&offset=0",
+        "body": null,
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+              "pharmacy_id": "PHARM-A",
+              "product": {
+                "id": "MED-A",
+                "name": "Demo Medicine A",
+                "strength": "10 mg",
+                "form": "tablet",
+                "unit": "tablet"
+              },
+              "requested_quantity": 6,
+              "unit": "tablet",
+              "created_at": "2026-10-07T05:10:00Z",
+              "claim": {
+                "id": "CLAIM-A",
+                "pharmacy_id": "PHARM-A",
+                "product_id": "MED-A",
+                "quantity": 12,
+                "unit": "tablet",
+                "recorded_at": "2026-10-07T03:10:00Z",
+                "loaded_at": "2026-10-07T03:15:00Z",
+                "source": "synthetic inventory fixture",
+                "simulated": true
+              },
+              "simulated": true,
+              "served_at": "2026-10-07T05:10:00Z",
+              "observation": null,
+              "status": "pending",
+              "answer": {
+                "conclusion": "unresolved",
+                "reason": "awaiting_check",
+                "discrepancy_units": null,
+                "message": "You requested 6 tablets. No staff check has been saved.",
+                "limitations": [
+                  "Synthetic demonstration.",
+                  "Recorded stock is not a physical check.",
+                  "No stock reservation or clinical approval."
+                ]
+              }
+            }
+          ],
+          "limit": 20,
+          "offset": 0,
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "staff_queue_forbidden_nonmember",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/staff/enquiries?pharmacy_id=PHARM-A&limit=20&offset=0",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "Caller is not an active staff member of this pharmacy.",
+            "fields": ["pharmacy_id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_observation_staff_1",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001/observation",
+        "body": {
+          "product_id": "MED-A",
+          "unit": "tablet",
+          "kind": "checked",
+          "obtainable_quantity": 4,
+          "observed_at": "2026-10-07T05:15:00Z",
+          "unresolved_reason": null
+        },
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:20:00Z",
+          "observation": {
+            "product_id": "MED-A",
+            "unit": "tablet",
+            "kind": "checked",
+            "obtainable_quantity": 4,
+            "observed_at": "2026-10-07T05:15:00Z",
+            "unresolved_reason": null,
+            "reported_by_user_id": "a1000000-0000-4000-8000-000000000001",
+            "submitted_at": "2026-10-07T05:20:00Z",
+            "basis": "staff_reported_obtainable_count",
+            "simulated": true
+          },
+          "status": "answered",
+          "answer": {
+            "conclusion": "insufficient",
+            "reason": "checked_below_request",
+            "discrepancy_units": -8,
+            "message": "You requested 6 tablets. Staff reported 4 obtainable tablets at 2026-10-07T05:15:00Z. This did not meet the requested quantity at that time. Recorded stock was 12 tablets.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Staff report is not independently verified.",
+              "This check does not reserve stock or guarantee availability on arrival.",
+              "Exact identity matching is not clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_observation_replay_same_reporter",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001/observation",
+        "body": {
+          "product_id": "MED-A",
+          "unit": "tablet",
+          "kind": "checked",
+          "obtainable_quantity": 4,
+          "observed_at": "2026-10-07T05:15:00Z",
+          "unresolved_reason": null
+        },
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "owner_user_id": "c1000000-0000-4000-8000-000000000001",
+          "pharmacy_id": "PHARM-A",
+          "product": {
+            "id": "MED-A",
+            "name": "Demo Medicine A",
+            "strength": "10 mg",
+            "form": "tablet",
+            "unit": "tablet"
+          },
+          "requested_quantity": 6,
+          "unit": "tablet",
+          "created_at": "2026-10-07T05:10:00Z",
+          "claim": {
+            "id": "CLAIM-A",
+            "pharmacy_id": "PHARM-A",
+            "product_id": "MED-A",
+            "quantity": 12,
+            "unit": "tablet",
+            "recorded_at": "2026-10-07T03:10:00Z",
+            "loaded_at": "2026-10-07T03:15:00Z",
+            "source": "synthetic inventory fixture",
+            "simulated": true
+          },
+          "simulated": true,
+          "served_at": "2026-10-07T05:20:00Z",
+          "observation": {
+            "product_id": "MED-A",
+            "unit": "tablet",
+            "kind": "checked",
+            "obtainable_quantity": 4,
+            "observed_at": "2026-10-07T05:15:00Z",
+            "unresolved_reason": null,
+            "reported_by_user_id": "a1000000-0000-4000-8000-000000000001",
+            "submitted_at": "2026-10-07T05:20:00Z",
+            "basis": "staff_reported_obtainable_count",
+            "simulated": true
+          },
+          "status": "answered",
+          "answer": {
+            "conclusion": "insufficient",
+            "reason": "checked_below_request",
+            "discrepancy_units": -8,
+            "message": "You requested 6 tablets. Staff reported 4 obtainable tablets at 2026-10-07T05:15:00Z. This did not meet the requested quantity at that time. Recorded stock was 12 tablets.",
+            "limitations": [
+              "Synthetic demonstration.",
+              "Staff report is not independently verified.",
+              "This check does not reserve stock or guarantee availability on arrival.",
+              "Exact identity matching is not clinical approval."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_observation_conflict_competing_staff",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001/observation",
+        "body": {
+          "product_id": "MED-A",
+          "unit": "tablet",
+          "kind": "checked",
+          "obtainable_quantity": 4,
+          "observed_at": "2026-10-07T05:15:00Z",
+          "unresolved_reason": null
+        },
+        "caller": "staff_a_2"
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "immutable_conflict",
+            "message": "A different observation has already been recorded for this enquiry.",
+            "fields": ["observation"]
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_observation_conflict_changed_body",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001/observation",
+        "body": {
+          "product_id": "MED-A",
+          "unit": "tablet",
+          "kind": "checked",
+          "obtainable_quantity": 8,
+          "observed_at": "2026-10-07T05:15:00Z",
+          "unresolved_reason": null
+        },
+        "caller": "staff_a_1"
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "immutable_conflict",
+            "message": "A different observation has already been recorded for this enquiry.",
+            "fields": ["observation"]
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_observation_revoked_staff",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001/observation",
+        "body": {
+          "product_id": "MED-A",
+          "unit": "tablet",
+          "kind": "checked",
+          "obtainable_quantity": 4,
+          "observed_at": "2026-10-07T05:15:00Z",
+          "unresolved_reason": null
+        },
+        "caller": "staff_revoked"
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "Caller is not an active staff member of this pharmacy.",
+            "fields": ["pharmacy_id"]
+          }
+        }
+      }
+    },
+    {
+      "name": "auth_missing_token",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/me",
+        "body": null,
+        "caller": "anonymous"
+      },
+      "response": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Missing authorization header.",
+            "fields": []
+          }
+        }
+      }
+    },
+    {
+      "name": "auth_disabled_account",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/me",
+        "body": null,
+        "caller": "disabled_user"
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "forbidden",
+            "message": "Account has been disabled.",
+            "fields": []
+          }
+        }
+      }
+    },
+    {
+      "name": "auth_service_unavailable",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/me",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": {
+            "code": "auth_unavailable",
+            "message": "Identity verification service is temporarily unavailable.",
+            "fields": []
+          }
+        }
+      }
+    },
+    {
+      "name": "storage_unavailable",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/health",
+        "body": null,
+        "caller": "anonymous"
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": {
+            "code": "storage_unavailable",
+            "message": "Storage is unavailable.",
+            "fields": []
+          }
+        }
+      }
+    },
+    {
+      "name": "rate_limited",
+      "request": {
+        "method": "PUT",
+        "path": "/api/v2/enquiries/00000000-0000-4000-8000-000000000001",
+        "body": {
+          "pharmacy_id": "PHARM-A",
+          "product_id": "MED-A",
+          "requested_quantity": 6,
+          "unit": "tablet"
+        },
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 429,
+        "body": {
+          "error": {
+            "code": "rate_limited",
+            "message": "Rate limit exceeded. Please retry later.",
+            "fields": []
+          }
+        }
+      }
+    },
+    {
+      "name": "validation_invalid_uuid",
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/enquiries/not-a-valid-uuid",
+        "body": null,
+        "caller": "caregiver_1"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "error": {
+            "code": "validation_error",
+            "message": "Invalid enquiry UUID.",
+            "fields": ["id"]
+          }
+        }
+      }
+    }
+  ]
+}
