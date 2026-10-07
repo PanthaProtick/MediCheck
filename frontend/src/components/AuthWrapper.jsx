@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   ClerkProvider,
-  SignedIn,
-  SignedOut,
   SignIn,
   SignUp,
   UserButton,
@@ -49,9 +47,17 @@ function ClerkAuthBridge({ children }) {
     },
   };
 
-  return (
-    <AuthContext.Provider value={authValue}>
-      <SignedOut>
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <AuthContext.Provider value={authValue}>
         <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6">
           <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl text-center">
             <div className="inline-flex p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl mb-4 text-indigo-400">
@@ -66,8 +72,13 @@ function ClerkAuthBridge({ children }) {
             </div>
           </div>
         </div>
-      </SignedOut>
-      <SignedIn>{children}</SignedIn>
+      </AuthContext.Provider>
+    );
+  }
+
+  return (
+    <AuthContext.Provider value={authValue}>
+      {children}
     </AuthContext.Provider>
   );
 }
