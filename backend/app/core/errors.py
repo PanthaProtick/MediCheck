@@ -4,7 +4,7 @@ from app.models.schemas import ErrorDetail, ErrorResponse
 ErrorCode = Literal[
     "validation_error", "unauthorized", "forbidden", "not_found",
     "immutable_conflict", "storage_unavailable", "internal_error",
-    "method_not_allowed", "unsupported_media_type"
+    "method_not_allowed", "unsupported_media_type", "rate_limit_exceeded"
 ]
 
 class AppError(Exception):

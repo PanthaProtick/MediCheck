@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     CLERK_ISSUER: str = Field(default="")
     PUBLIC_APP_ORIGIN: str = Field(default="http://localhost:5173")
 
+    # Rate limiting & body size bounds (P08 policy)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_MAX_REQUESTS: int = 120
+    RATE_LIMIT_MAX_MUTATIONS: int = 30
+    MAX_REQUEST_BODY_BYTES: int = 16384  # 16 KiB
+
     STATIC_DIR: str | None = None
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",

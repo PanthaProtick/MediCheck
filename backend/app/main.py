@@ -53,7 +53,14 @@ def create_app(
                 raise RuntimeError(
                     f"Demo mode requires built frontend assets at {dist_dir}. Run 'npm run build' in frontend first."
                 )
-        yield
+        try:
+            yield
+        finally:
+            if hasattr(app.state, "engine") and app.state.engine is not None:
+                try:
+                    app.state.engine.dispose()
+                except Exception:
+                    pass
 
     app = FastAPI(
         title=active_settings.PROJECT_NAME,
@@ -70,28 +77,86 @@ def create_app(
     if session_verifier is not None:
         app.state.session_verifier = session_verifier
 
-    # Middleware for media type check and Cache-Control
+    import hashlib
+    from app.core.rate_limit import InMemoryRateLimiter
+
+    rate_limiter = InMemoryRateLimiter(
+        max_requests_per_min=active_settings.RATE_LIMIT_MAX_REQUESTS,
+        max_mutations_per_min=active_settings.RATE_LIMIT_MAX_MUTATIONS,
+    )
+    app.state.rate_limiter = rate_limiter
+
+    # Middleware for media type check, body size bounds, rate limiting, and Cache-Control
     @app.middleware("http")
     async def api_middleware(request: Request, call_next):
-        is_api = request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/v2")
-        if is_api and request.method in ("PUT", "POST"):
-            ct = request.headers.get("content-type", "")
-            media_type = ct.split(";")[0].strip().lower()
-            if media_type != "application/json":
-                return JSONResponse(
-                    status_code=415,
-                    content={
-                        "error": {
-                            "code": "unsupported_media_type",
-                            "message": "Content-Type must be application/json.",
-                            "fields": ["body"],
-                        }
-                    },
-                    headers={"Cache-Control": "no-store"},
-                )
+        is_api = request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/v2") or request.url.path.startswith("/api/")
+
+        if is_api:
+            # 1. Body ceiling check (16KiB)
+            cl = request.headers.get("content-length")
+            if cl:
+                try:
+                    if int(cl) > active_settings.MAX_REQUEST_BODY_BYTES:
+                        return JSONResponse(
+                            status_code=413,
+                            content={
+                                "error": {
+                                    "code": "validation_error",
+                                    "message": f"Request body exceeds maximum allowed size of {active_settings.MAX_REQUEST_BODY_BYTES} bytes.",
+                                    "fields": ["body"],
+                                }
+                            },
+                            headers={"Cache-Control": "no-store"},
+                        )
+                except ValueError:
+                    pass
+
+            # 2. Rate limiting check
+            if active_settings.RATE_LIMIT_ENABLED:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:].strip()
+                    client_key = f"user:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
+                else:
+                    client_key = f"ip:{request.client.host if request.client else 'unknown'}"
+
+                is_mutation = request.method in ("PUT", "POST", "DELETE", "PATCH")
+                limit_res = rate_limiter.check_and_record(client_key, is_mutation=is_mutation)
+                if not limit_res.allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": {
+                                "code": "rate_limit_exceeded",
+                                "message": f"Rate limit exceeded. Try again in {limit_res.retry_after} seconds.",
+                                "fields": [],
+                            }
+                        },
+                        headers={
+                            "Retry-After": str(limit_res.retry_after),
+                            "Cache-Control": "no-store",
+                        },
+                    )
+
+            # 3. Media type check for mutations
+            if request.method in ("PUT", "POST"):
+                ct = request.headers.get("content-type", "")
+                media_type = ct.split(";")[0].strip().lower()
+                if media_type != "application/json":
+                    return JSONResponse(
+                        status_code=415,
+                        content={
+                            "error": {
+                                "code": "unsupported_media_type",
+                                "message": "Content-Type must be application/json.",
+                                "fields": ["body"],
+                            }
+                        },
+                        headers={"Cache-Control": "no-store"},
+                    )
 
         response = await call_next(request)
-        if is_api or request.url.path.startswith("/api"):
+        if is_api:
             response.headers["Cache-Control"] = "no-store"
         return response
 
