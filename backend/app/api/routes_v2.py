@@ -45,14 +45,140 @@ def _get_clock(request: Request) -> Callable[[], datetime]:
     return getattr(request.app.state, "clock", utc_now)
 
 
+from pathlib import Path
+from sqlalchemy import create_engine, text
+from app.core.auth import (
+    ClerkSessionVerifier,
+    SessionVerifier,
+    TestSessionVerifier,
+    extract_bearer_token,
+    get_or_create_local_user,
+)
+from app.models.schemas_v2 import VerifiedIdentity
+
+
+def _ensure_v2_schema_sqlite(engine: Engine) -> None:
+    schema_sql = """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES ('001_multi_user', '2026-10-07T00:00:00Z');
+
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            auth_subject TEXT UNIQUE NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pharmacies (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            simulated INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS pharmacy_memberships (
+            user_id TEXT NOT NULL,
+            pharmacy_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'staff',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, pharmacy_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS products (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            strength TEXT NOT NULL,
+            form TEXT NOT NULL,
+            unit TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS claims (
+            id TEXT PRIMARY KEY,
+            pharmacy_id TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            quantity INTEGER NULL,
+            unit TEXT NOT NULL,
+            recorded_at TEXT NULL,
+            loaded_at TEXT NOT NULL,
+            source TEXT NOT NULL,
+            simulated INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS enquiries (
+            id TEXT PRIMARY KEY,
+            owner_user_id TEXT NOT NULL,
+            pharmacy_id TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            requested_quantity INTEGER NOT NULL,
+            unit TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            product_snapshot_json TEXT NOT NULL,
+            claim_snapshot_json TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS observations (
+            enquiry_id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            obtainable_quantity INTEGER NULL,
+            observed_at TEXT NULL,
+            unresolved_reason TEXT NULL,
+            reported_by_user_id TEXT NOT NULL,
+            submitted_at TEXT NOT NULL,
+            basis TEXT NOT NULL,
+            simulated INTEGER NOT NULL DEFAULT 1
+        );
+
+        INSERT OR IGNORE INTO pharmacies (id, name, active, simulated) VALUES
+        ('PHARM-A', 'Synthetic Demo Pharmacy A', 1, 1),
+        ('PHARM-B', 'Synthetic Demo Pharmacy B', 1, 1);
+
+        INSERT OR IGNORE INTO products (id, name, strength, form, unit) VALUES
+        ('MED-A', 'Demo Medicine A', '10 mg', 'tablet', 'tablet'),
+        ('MED-B', 'Demo Medicine B', '500 mg', 'capsule', 'capsule');
+
+        INSERT OR IGNORE INTO claims (id, pharmacy_id, product_id, quantity, unit, recorded_at, loaded_at, source, simulated) VALUES
+        ('CLAIM-A', 'PHARM-A', 'MED-A', 12, 'tablet', '2026-10-07T05:00:00Z', '2026-10-07T05:00:00Z', 'synthetic inventory fixture', 1),
+        ('CLAIM-B', 'PHARM-B', 'MED-B', 25, 'capsule', '2026-10-07T05:00:00Z', '2026-10-07T05:00:00Z', 'synthetic inventory fixture', 1);
+
+        INSERT OR IGNORE INTO users (id, auth_subject, active, created_at) VALUES
+        ('a1000000-0000-4000-8000-000000000001', 'sub_staff_a_1', 1, '2026-10-07T00:00:00Z'),
+        ('b1000000-0000-4000-8000-000000000003', 'sub_staff_b', 1, '2026-10-07T00:00:00Z');
+
+        INSERT OR IGNORE INTO pharmacy_memberships (user_id, pharmacy_id, role, active, created_at) VALUES
+        ('a1000000-0000-4000-8000-000000000001', 'PHARM-A', 'staff', 1, '2026-10-07T00:00:00Z'),
+        ('b1000000-0000-4000-8000-000000000003', 'PHARM-B', 'staff', 1, '2026-10-07T00:00:00Z');
+    """
+    with engine.connect() as conn:
+        with conn.begin():
+            for stmt in schema_sql.strip().split(";"):
+                if stmt.strip():
+                    conn.execute(text(stmt.strip()))
+
+
 def _get_engine(request: Request) -> Engine:
     engine = getattr(request.app.state, "engine", None)
     if engine is None:
         settings = _get_settings(request)
         sync_url = settings.get_sync_database_url()
-        if not sync_url:
-            raise AppError(503, "storage_unavailable", "DATABASE_URL is not configured.", [])
-        engine = create_pg_engine(sync_url)
+        is_sample = "ep-sample-pooler" in sync_url or "password@" in sync_url
+        if sync_url and not is_sample:
+            try:
+                engine = create_pg_engine(sync_url)
+                request.app.state.engine = engine
+                return engine
+            except Exception:
+                if settings.ENV == "production":
+                    raise
+        # Development / demo fallback to SQLite
+        db_path = settings.DEMO_DATABASE_PATH or str(Path(__file__).resolve().parent.parent.parent / "data" / "demo.sqlite3")
+        engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        _ensure_v2_schema_sqlite(engine)
         request.app.state.engine = engine
     return engine
 
@@ -60,8 +186,18 @@ def _get_engine(request: Request) -> Engine:
 def _get_verifier(request: Request) -> SessionVerifier:
     verifier = getattr(request.app.state, "session_verifier", None)
     if verifier is None:
-        verifier = ClerkSessionVerifier()
-        request.app.state.session_verifier = verifier
+        settings = _get_settings(request)
+        if not settings.CLERK_ISSUER and not settings.CLERK_SECRET_KEY and settings.ENV != "production":
+            verifier = TestSessionVerifier({
+                "test-token-caregiver_1": VerifiedIdentity(auth_subject="sub_caregiver_1", email="caregiver_1@demo.local"),
+                "test-token-caregiver_2": VerifiedIdentity(auth_subject="sub_caregiver_2", email="caregiver_2@demo.local"),
+                "test-token-staff_a_1": VerifiedIdentity(auth_subject="sub_staff_a_1", email="staff_a_1@demo.local"),
+                "test-token-staff_b": VerifiedIdentity(auth_subject="sub_staff_b", email="staff_b@demo.local"),
+            })
+            request.app.state.session_verifier = verifier
+        else:
+            verifier = ClerkSessionVerifier()
+            request.app.state.session_verifier = verifier
     return verifier
 
 
