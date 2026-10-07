@@ -18,7 +18,7 @@ from app.api.routes import router as api_router
 from app.api.routes_v2 import router as api_router_v2
 from app.core.auth import SessionVerifier
 from app.core.config import Settings, settings as default_settings
-from app.core.database import initialize_database
+from app.core.database import initialize_database, create_pg_engine, check_pg_readiness
 from app.core.errors import AppError
 from app.services.enquiries import utc_now
 
@@ -42,17 +42,36 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-        if not active_settings.DEMO_STAFF_TOKEN.strip():
-            raise RuntimeError("DEMO_STAFF_TOKEN must be configured in the backend environment.")
-        if not Path(active_settings.DEMO_DATABASE_PATH).is_absolute():
-            raise RuntimeError("DEMO_DATABASE_PATH must be an absolute path.")
-        initialize_database(active_settings.DEMO_DATABASE_PATH)
-
-        if active_settings.ENV == "demo":
-            if not dist_dir.exists() or not (dist_dir / "index.html").exists():
-                raise RuntimeError(
-                    f"Demo mode requires built frontend assets at {dist_dir}. Run 'npm run build' in frontend first."
+        testing = active_settings.ENV == "test" and engine is not None and session_verifier is not None
+        if active_settings.APP_MODE == "hosted":
+            if not testing:
+                active_settings.validate_hosted()
+                if session_verifier is not None or engine is not None:
+                    raise RuntimeError("Hosted runtime does not allow injected test dependencies.")
+                manifest = dist_dir / "deployment.json"
+                if not manifest.exists() or json.loads(manifest.read_text()) != {"schema_version": 1, "runtime_config": True}:
+                    raise RuntimeError("Build the runtime-config frontend before hosted startup.")
+                if not (dist_dir / "index.html").exists():
+                    raise RuntimeError("Hosted frontend assets are missing.")
+                app.state.engine = create_pg_engine(
+                    active_settings.get_sync_database_url(),
+                    active_settings.DB_POOL_SIZE, active_settings.DB_MAX_OVERFLOW,
+                    active_settings.DB_POOL_TIMEOUT,
                 )
+            try:
+                check_pg_readiness(app.state.engine)
+            except Exception:
+                app.state.engine.dispose()
+                raise
+        else:
+            active_settings.validate_hosted()
+            if not active_settings.DEMO_STAFF_TOKEN.strip():
+                raise RuntimeError("DEMO_STAFF_TOKEN must be configured in the backend environment.")
+            if not Path(active_settings.DEMO_DATABASE_PATH).is_absolute():
+                raise RuntimeError("DEMO_DATABASE_PATH must be an absolute path.")
+            initialize_database(active_settings.DEMO_DATABASE_PATH)
+            if active_settings.ENV == "demo" and not (dist_dir / "index.html").exists():
+                raise RuntimeError("Demo mode requires built frontend assets. Run npm run build.")
         try:
             yield
         finally:
@@ -65,7 +84,8 @@ def create_app(
     app = FastAPI(
         title=active_settings.PROJECT_NAME,
         version="2.0.0",
-        docs_url="/docs",
+        docs_url=None if active_settings.ENV == "production" else "/docs",
+        openapi_url=None if active_settings.ENV == "production" else "/openapi.json",
         redoc_url=None,
         lifespan=lifespan,
     )
@@ -77,7 +97,6 @@ def create_app(
     if session_verifier is not None:
         app.state.session_verifier = session_verifier
 
-    import hashlib
     from app.core.rate_limit import InMemoryRateLimiter
 
     rate_limiter = InMemoryRateLimiter(
@@ -111,14 +130,22 @@ def create_app(
                 except ValueError:
                     pass
 
+            if request.method in ("PUT", "POST", "PATCH"):
+                parts = []
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > active_settings.MAX_REQUEST_BODY_BYTES:
+                        return JSONResponse(status_code=413, content={"error": {
+                            "code": "validation_error", "message": "Request body exceeds maximum allowed size.",
+                            "fields": ["body"]}}, headers={"Cache-Control": "no-store"})
+                    parts.append(chunk)
+                request._body = b"".join(parts)
+
             # 2. Rate limiting check
             if active_settings.RATE_LIMIT_ENABLED:
-                auth_header = request.headers.get("authorization", "")
-                if auth_header.startswith("Bearer "):
-                    token = auth_header[7:].strip()
-                    client_key = f"user:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
-                else:
-                    client_key = f"ip:{request.client.host if request.client else 'unknown'}"
+                # Unverified bearer strings must never create new limit identities.
+                client_key = f"ip:{request.client.host if request.client else 'unknown'}"
 
                 is_mutation = request.method in ("PUT", "POST", "DELETE", "PATCH")
                 limit_res = rate_limiter.check_and_record(client_key, is_mutation=is_mutation)
@@ -127,7 +154,7 @@ def create_app(
                         status_code=429,
                         content={
                             "error": {
-                                "code": "rate_limit_exceeded",
+                                "code": "rate_limited" if active_settings.APP_MODE == "hosted" else "rate_limit_exceeded",
                                 "message": f"Rate limit exceeded. Try again in {limit_res.retry_after} seconds.",
                                 "fields": [],
                             }
@@ -163,7 +190,7 @@ def create_app(
     # CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=active_settings.CORS_ORIGINS if isinstance(active_settings.CORS_ORIGINS, list) else ["*"],
+        allow_origins=active_settings.CORS_ORIGINS if isinstance(active_settings.CORS_ORIGINS, list) else [],
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -260,8 +287,19 @@ def create_app(
         }}, headers={"Cache-Control": "no-store"})
 
     # Register API routers
-    app.include_router(api_router_v2, prefix="/api/v2")
-    app.include_router(api_router, prefix="/api/v1")
+    @app.get("/api/config")
+    def public_config():
+        return JSONResponse({
+            "mode": active_settings.APP_MODE,
+            "clerk_publishable_key": active_settings.CLERK_PUBLISHABLE_KEY if active_settings.APP_MODE == "hosted" else None,
+            "simulated": True,
+        }, headers={"Cache-Control": "no-store"})
+
+    if active_settings.APP_MODE == "hosted":
+        app.include_router(api_router_v2, prefix="/api/v2")
+    else:
+        app.include_router(api_router, prefix="/api/v1")
+        app.include_router(api_router_v2, prefix="/api/v2")
 
     # Serve static assets if built
     if dist_dir.exists() and (dist_dir / "index.html").exists():
