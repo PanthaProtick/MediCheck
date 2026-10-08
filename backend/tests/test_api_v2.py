@@ -135,6 +135,7 @@ class TestApiV2(unittest.TestCase):
 
         self.settings = Settings(
             ENV="test",
+            APP_MODE="hosted",
             PROJECT_NAME="Availability Verification MVP v2",
             DEMO_STAFF_TOKEN="test-token",
         )
@@ -226,7 +227,7 @@ class TestApiV2(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["status"], "ready")
-        self.assertEqual(data["storage"], "postgresql")
+        self.assertEqual(data["storage"], "sqlite")
         self.assertEqual(res.headers.get("cache-control"), "no-store")
 
     def test_v2_me_unauthorized(self):

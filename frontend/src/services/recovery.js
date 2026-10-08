@@ -5,10 +5,11 @@ export function parseQuantity(value, minimum) {
 }
 
 export function matchesIntent(view, intent) {
-  if (!view || !intent) return false;
+  if (!view || !intent || !intent.payload || !['create', 'report'].includes(intent.type)) return false;
   const { payload } = intent;
   if (view.id !== intent.id) return false;
   if (intent.type === 'create') {
+    if (intent.userId && (view.owner_user_id || view.owner_id) !== intent.userId) return false;
     return view.pharmacy_id === payload.pharmacy_id &&
       (view.product?.id || view.product_id) === payload.product_id &&
       view.unit === payload.unit &&
@@ -19,7 +20,7 @@ export function matchesIntent(view, intent) {
 
   // Account-bound check: if intent has a userId and observation has a reporter_id,
   // ensure another staff member's report is NOT treated as this user's submission.
-  if (intent.userId && observation.reporter_id && observation.reporter_id !== intent.userId) {
+  if (intent.userId && (observation.reported_by_user_id || observation.reporter_id) !== intent.userId) {
     return false;
   }
 
@@ -43,26 +44,17 @@ export function sameInstant(left, right) {
 
 export function createReadGuard() {
   let generation = 0;
-  let activeUserId = null;
-  let activePharmacyId = null;
-  let activeEnquiryId = null;
 
   return {
     begin: (userId = null, pharmacyId = null, enquiryId = null) => {
       generation++;
       if (userId || pharmacyId || enquiryId) {
-        activeUserId = userId;
-        activePharmacyId = pharmacyId;
-        activeEnquiryId = enquiryId;
         return { generation, userId, pharmacyId, enquiryId };
       }
       return generation;
     },
     invalidate: () => {
       generation++;
-      activeUserId = null;
-      activePharmacyId = null;
-      activeEnquiryId = null;
     },
     isCurrent: (handleOrGen, userId = null, pharmacyId = null, enquiryId = null) => {
       if (typeof handleOrGen === 'number') {

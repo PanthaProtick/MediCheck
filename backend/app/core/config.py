@@ -1,5 +1,8 @@
 from pathlib import Path
-from typing import List, Union
+from typing import List, Literal, Union
+from urllib.parse import urlsplit
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,6 +12,7 @@ DEFAULT_DB_PATH = str(DEFAULT_DATA_DIR / "demo.sqlite3")
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Availability Verification MVP"
     ENV: str = "development"
+    APP_MODE: Literal["local", "hosted"] = "local"
     DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
@@ -49,8 +53,32 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    def validate_hosted(self) -> None:
+        if self.APP_MODE != "hosted":
+            if self.ENV == "production":
+                raise RuntimeError("Production requires APP_MODE=hosted.")
+            return
+        url = self.get_sync_database_url()
+        try:
+            is_postgres = bool(url) and make_url(url).get_backend_name() == "postgresql"
+        except ArgumentError:
+            is_postgres = False
+        if not is_postgres:
+            raise RuntimeError("Hosted mode requires a PostgreSQL DATABASE_URL.")
+        for label, value in (("CLERK_ISSUER", self.CLERK_ISSUER),
+                             ("PUBLIC_APP_ORIGIN", self.PUBLIC_APP_ORIGIN)):
+            parts = urlsplit(value)
+            if parts.scheme != "https" or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment or parts.path != "":
+                raise RuntimeError(label + " must be an HTTPS origin without a path.")
+        if not self.CLERK_PUBLISHABLE_KEY.startswith(("pk_test_", "pk_live_")):
+            raise RuntimeError("Hosted mode requires CLERK_PUBLISHABLE_KEY.")
+        if self.ENV == "production" and not self.CLERK_PUBLISHABLE_KEY.startswith("pk_live_"):
+            raise RuntimeError("Production requires a Clerk production publishable key.")
+        if not isinstance(self.CORS_ORIGINS, list) or self.PUBLIC_APP_ORIGIN not in self.CORS_ORIGINS or "*" in self.CORS_ORIGINS:
+            raise RuntimeError("Hosted CORS_ORIGINS must explicitly include PUBLIC_APP_ORIGIN.")
+
     def get_sync_database_url(self, is_test: bool = False) -> str:
-        url = self.TEST_DATABASE_URL if is_test and self.TEST_DATABASE_URL else self.DATABASE_URL
+        url = self.TEST_DATABASE_URL if is_test else self.DATABASE_URL
         if not url:
             return ""
         # Normalize postgres driver for SQLAlchemy sync engine

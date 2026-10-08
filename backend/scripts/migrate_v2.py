@@ -54,7 +54,7 @@ def main():
         print("SUCCESS: PostgreSQL database is ready for v2 multi-user operation.")
 
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print("ERROR: Migration or readiness check failed. Check database connectivity and migration state.", file=sys.stderr)
         sys.exit(1)
     finally:
         engine.dispose()

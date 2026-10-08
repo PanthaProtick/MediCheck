@@ -20,6 +20,9 @@ class TestAuth(unittest.TestCase):
     def setUp(self):
         self.settings = Settings()
         self.engine = create_engine("sqlite:///:memory:")
+        with self.engine.begin() as conn:
+            conn.execute(text("CREATE TABLE pharmacies (id TEXT PRIMARY KEY, active BOOLEAN NOT NULL);"))
+            conn.execute(text("INSERT INTO pharmacies VALUES ('PHARM-A', TRUE);"))
         with self.engine.connect() as conn:
             with conn.begin():
                 conn.execute(

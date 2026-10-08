@@ -98,7 +98,7 @@ def evaluate_v2(input_data: EvaluationInputV2) -> EvaluationResultV2:
         return EvaluationResultV2(status=Status.unresolved, answer=answer)
 
     # 5. Conclusive check
-    time_str = obs.observed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    time_str = obs.observed_at.isoformat().replace("+00:00", "Z")
     if obs.obtainable_quantity is not None and obs.obtainable_quantity >= enquiry.requested_quantity:
         conclusion = Conclusion.sufficient
         reason = Reason.checked_meets_request

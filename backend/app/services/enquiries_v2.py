@@ -201,9 +201,9 @@ def create_enquiry_v2(
         ) VALUES (
             :id, :owner_user_id, :pharmacy_id, :product_id, :requested_quantity, :unit,
             :created_at, :product_snapshot_json, :claim_snapshot_json
-        );
+        ) ON CONFLICT (id) DO NOTHING RETURNING id;
     """)
-    conn.execute(
+    inserted = conn.execute(
         stmt_insert,
         {
             "id": canonical_id,
@@ -216,7 +216,9 @@ def create_enquiry_v2(
             "product_snapshot_json": product_snapshot.model_dump_json(),
             "claim_snapshot_json": claim_snapshot.model_dump_json() if claim_snapshot else None,
         },
-    )
+    ).fetchone()
+    if inserted is None:
+        return create_enquiry_v2(conn, canonical_id, request, principal, clock)
 
     record = EnquiryRecordV2(
         id=UUID(canonical_id),
@@ -482,39 +484,17 @@ def accept_observation_v2(
         "basis": basis,
     }
 
-    # Support SQLite legacy table if staff_id column exists
-    has_staff_id = False
-    try:
-        col_names = [col[1] for col in conn.execute(text("PRAGMA table_info(observations)")).fetchall()]
-        has_staff_id = "staff_id" in col_names
-    except Exception:
-        pass
-
-    if has_staff_id:
-        obs_params["staff_id"] = str(principal.user_id)
-        stmt_insert_obs = text("""
-            INSERT INTO observations (
-                enquiry_id, product_id, unit, kind, obtainable_quantity,
-                observed_at, unresolved_reason, reported_by_user_id, staff_id, submitted_at,
-                basis, simulated
-            ) VALUES (
-                :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
-                :observed_at, :unresolved_reason, :reported_by_user_id, :staff_id, :submitted_at,
-                :basis, TRUE
-            );
-        """)
-    else:
-        stmt_insert_obs = text("""
-            INSERT INTO observations (
-                enquiry_id, product_id, unit, kind, obtainable_quantity,
-                observed_at, unresolved_reason, reported_by_user_id, submitted_at,
-                basis, simulated
-            ) VALUES (
-                :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
-                :observed_at, :unresolved_reason, :reported_by_user_id, :submitted_at,
-                :basis, TRUE
-            );
-        """)
+    stmt_insert_obs = text("""
+        INSERT INTO observations (
+            enquiry_id, product_id, unit, kind, obtainable_quantity,
+            observed_at, unresolved_reason, reported_by_user_id, submitted_at,
+            basis, simulated
+        ) VALUES (
+            :enquiry_id, :product_id, :unit, :kind, :obtainable_quantity,
+            :observed_at, :unresolved_reason, :reported_by_user_id, :submitted_at,
+            :basis, TRUE
+        );
+    """)
     conn.execute(stmt_insert_obs, obs_params)
 
     new_obs = ObservationV2(

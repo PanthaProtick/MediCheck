@@ -1,3 +1,5 @@
+> Historical verification snapshot. For the current local UI, role routing and checks, see [local_repair_validation.md](local_repair_validation.md).
+
 # MVP implementation recheck - 7 October 2026
 
 This report supersedes the earlier blanket completion claim. The original 33 backend tests passed before review, but the original frontend tests copied the transport function and depended on a running server, including writes to its database. They did not establish the shipped UI's recovery behavior. Those tests have been replaced with isolated checks that import the production client and shared recovery helpers.

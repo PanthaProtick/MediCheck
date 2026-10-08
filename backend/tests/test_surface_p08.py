@@ -17,6 +17,7 @@ class TestBoundedPublicSurface(unittest.TestCase):
             DEMO_DATABASE_PATH=":memory:",
             DEMO_STAFF_TOKEN="test-staff-token",
             ENV="test",
+            APP_MODE="hosted",
             RATE_LIMIT_ENABLED=True,
             RATE_LIMIT_MAX_REQUESTS=10,
             RATE_LIMIT_MAX_MUTATIONS=3,
@@ -165,7 +166,7 @@ class TestBoundedPublicSurface(unittest.TestCase):
         self.assertEqual(res.headers.get("cache-control"), "no-store")
         self.assertIn("retry-after", res.headers)
         data = res.json()
-        self.assertEqual(data["error"]["code"], "rate_limit_exceeded")
+        self.assertEqual(data["error"]["code"], "rate_limited")
 
     def test_unknown_api_route_returns_json_404_with_no_store(self):
         response = self.client.get("/api/v2/nonexistent/endpoint")
@@ -187,3 +188,21 @@ class TestBoundedPublicSurface(unittest.TestCase):
 
         # After 60 seconds, user1 is allowed again
         self.assertTrue(limiter.check_and_record("user1", is_mutation=True, now=162.0).allowed)
+
+
+class TestRateLimitBounds(unittest.TestCase):
+    def test_key_flood_is_bounded_and_expired_slots_reusable(self):
+        limiter = InMemoryRateLimiter(max_keys=2)
+        self.assertTrue(limiter.check_and_record("a", True, now=100).allowed)
+        self.assertTrue(limiter.check_and_record("b", True, now=100).allowed)
+        for i in range(100):
+            self.assertFalse(limiter.check_and_record(str(i), True, now=101).allowed)
+        self.assertEqual(len(limiter._requests), 2)
+        self.assertEqual(len(limiter._mutations), 2)
+        self.assertTrue(limiter.check_and_record("new", True, now=160).allowed)
+
+    def test_retry_after_rounds_up(self):
+        limiter = InMemoryRateLimiter(max_requests_per_min=1)
+        self.assertTrue(limiter.check_and_record("a", now=100).allowed)
+        self.assertEqual(limiter.check_and_record("a", now=100.1).retry_after, 60)
+        self.assertTrue(limiter.check_and_record("a", now=160).allowed)

@@ -32,80 +32,35 @@ class ClerkSessionVerifier(SessionVerifier):
 
     def verify_token(self, token: str, settings: Settings) -> VerifiedIdentity:
         if not token or not token.strip():
-            raise AppError(
-                status_code=401,
-                code="unauthorized",
-                message="Missing session token.",
-                fields=[],
-            )
-
-        # If Clerk secret / issuer is not configured, fail closed
-        if not settings.CLERK_ISSUER and not settings.CLERK_SECRET_KEY:
-            raise AppError(
-                status_code=503,
-                code="auth_unavailable",
-                message="Identity verification service is not configured.",
-                fields=[],
-            )
-
+            raise AppError(401, "unauthorized", "Missing session token.", [])
+        if not settings.CLERK_ISSUER or not settings.PUBLIC_APP_ORIGIN:
+            raise AppError(503, "auth_unavailable", "Identity verification service is not configured.", [])
         try:
-            # If using JWKS from Clerk issuer
-            if self._jwks_client is None and settings.CLERK_ISSUER:
-                jwks_url = f"{settings.CLERK_ISSUER.rstrip('/')}/.well-known/jwks.json"
-                self._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True, max_cached_keys=16)
-
-            if self._jwks_client:
-                signing_key = self._jwks_client.get_signing_key_from_jwt(token)
-                payload = jwt.decode(
-                    token,
-                    signing_key.key,
-                    algorithms=["RS256"],
-                    issuer=settings.CLERK_ISSUER if settings.CLERK_ISSUER else None,
-                    options={"verify_exp": True, "verify_nbf": True, "verify_iss": bool(settings.CLERK_ISSUER)},
+            if self._jwks_client is None:
+                self._jwks_client = jwt.PyJWKClient(
+                    settings.CLERK_ISSUER.rstrip("/") + "/.well-known/jwks.json",
+                    cache_keys=True, max_cached_keys=16, timeout=3,
                 )
-            else:
-                # Secret key fallback if configured
-                payload = jwt.decode(
-                    token,
-                    settings.CLERK_SECRET_KEY,
-                    algorithms=["HS256"],
-                    options={"verify_exp": True},
-                )
-
-            sub = payload.get("sub")
-            if not sub or not isinstance(sub, str):
-                raise AppError(
-                    status_code=401,
-                    code="unauthorized",
-                    message="Invalid token subject claim.",
-                    fields=[],
-                )
-
-            email = payload.get("email") or payload.get("email_address")
-            return VerifiedIdentity(auth_subject=sub, email=str(email) if email else None)
-
-        except jwt.ExpiredSignatureError as exc:
-            raise AppError(
-                status_code=401,
-                code="unauthorized",
-                message="Session token has expired.",
-                fields=[],
-            ) from exc
-        except (jwt.InvalidTokenError, jwt.DecodeError) as exc:
-            raise AppError(
-                status_code=401,
-                code="unauthorized",
-                message="Invalid session token signature or claims.",
-                fields=[],
-            ) from exc
+            signing_key = self._jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token, signing_key.key, algorithms=["RS256"],
+                issuer=settings.CLERK_ISSUER.rstrip("/"),
+                options={"require": ["exp", "iat", "nbf", "sub", "azp"],
+                         "verify_exp": True, "verify_nbf": True, "verify_iat": True,
+                         "verify_iss": True},
+            )
+            if payload.get("azp") != settings.PUBLIC_APP_ORIGIN.rstrip("/"):
+                raise jwt.InvalidTokenError("Untrusted authorized party")
+            sub = payload["sub"]
+            if not isinstance(sub, str) or not sub or len(sub) > 500:
+                raise jwt.InvalidTokenError("Invalid subject")
+            return VerifiedIdentity(auth_subject=sub)
+        except jwt.InvalidTokenError as exc:
+            raise AppError(401, "unauthorized", "Invalid or expired session token.", []) from exc
         except Exception as exc:
-            logger.error("Auth verification service failure: %s", exc)
-            raise AppError(
-                status_code=503,
-                code="auth_unavailable",
-                message="Identity verification service is temporarily unavailable.",
-                fields=[],
-            ) from exc
+            # Do not log supplied tokens, provider URLs, or provider exception bodies.
+            logger.warning("Identity verification service unavailable")
+            raise AppError(503, "auth_unavailable", "Identity verification service is temporarily unavailable.", []) from exc
 
 
 class TestSessionVerifier(SessionVerifier):
@@ -169,22 +124,17 @@ def get_or_create_local_user(
     now_fn = clock or (lambda: datetime.now(timezone.utc))
     now = now_fn().astimezone(timezone.utc)
 
-    # 1. Check existing user
-    stmt_find = text("SELECT id, auth_subject, active, created_at FROM users WHERE auth_subject = :sub;")
-    row = conn.execute(stmt_find, {"sub": identity.auth_subject}).fetchone()
-
-    if row is None:
-        new_id = uuid4()
-        stmt_insert = text("""
-            INSERT INTO users (id, auth_subject, active, created_at)
-            VALUES (:id, :sub, TRUE, :created_at);
-        """)
-        conn.execute(stmt_insert, {"id": str(new_id), "sub": identity.auth_subject, "created_at": now})
-        user_id = new_id
-        active = True
-    else:
-        user_id = UUID(str(row[0])) if not isinstance(row[0], UUID) else row[0]
-        active = bool(row[2])
+    # Concurrent first requests converge on the unique auth subject.
+    conn.execute(text("""
+        INSERT INTO users (id, auth_subject, active, created_at)
+        VALUES (:id, :sub, TRUE, :created_at)
+        ON CONFLICT (auth_subject) DO NOTHING;
+    """), {"id": str(uuid4()), "sub": identity.auth_subject, "created_at": now})
+    row = conn.execute(text(
+        "SELECT id, active FROM users WHERE auth_subject = :sub;"
+    ), {"sub": identity.auth_subject}).one()
+    user_id = UUID(str(row[0]))
+    active = bool(row[1])
 
     if not active:
         raise AppError(
@@ -196,9 +146,9 @@ def get_or_create_local_user(
 
     # 2. Query active memberships
     stmt_memberships = text("""
-        SELECT pharmacy_id, role, active, created_at
-        FROM pharmacy_memberships
-        WHERE user_id = :user_id AND active = TRUE;
+        SELECT m.pharmacy_id, m.role, m.active, m.created_at
+        FROM pharmacy_memberships m JOIN pharmacies p ON p.id = m.pharmacy_id
+        WHERE m.user_id = :user_id AND m.active = TRUE AND p.active = TRUE;
     """)
     m_rows = conn.execute(stmt_memberships, {"user_id": str(user_id)}).fetchall()
     memberships = [

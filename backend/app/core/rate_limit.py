@@ -1,5 +1,6 @@
 from collections import deque
 import time
+import math
 from typing import NamedTuple
 
 
@@ -12,7 +13,7 @@ class InMemoryRateLimiter:
     """Bounded, single-worker sliding window rate limiter for demo policy.
 
     Tracks 60-second windows for total requests (default 120/min) and
-    mutations (default 30/min) per client identity. Bounded to max_keys.
+    mutations (default 30/min) per client IP. Bounded to max_keys.
     """
 
     def __init__(
@@ -29,7 +30,7 @@ class InMemoryRateLimiter:
         self._mutations: dict[str, deque[float]] = {}
 
     def _purge_old(self, queue: deque[float], cutoff: float) -> None:
-        while queue and queue[0] < cutoff:
+        while queue and queue[0] <= cutoff:
             queue.popleft()
 
     def check_and_record(
@@ -42,15 +43,17 @@ class InMemoryRateLimiter:
         cutoff = current_time - 60.0
 
         # Memory bound check
-        if len(self._requests) > self.max_keys:
+        if client_key not in self._requests and len(self._requests) >= self.max_keys:
             self._cleanup_all(cutoff)
+            if len(self._requests) >= self.max_keys:
+                return RateLimitResult(allowed=False, retry_after=60)
 
         req_queue = self._requests.setdefault(client_key, deque())
         self._purge_old(req_queue, cutoff)
 
         if len(req_queue) >= self.max_requests_per_min:
             oldest = req_queue[0]
-            retry_after = max(1, int(60.0 - (current_time - oldest)))
+            retry_after = max(1, math.ceil(60.0 - (current_time - oldest)))
             return RateLimitResult(allowed=False, retry_after=retry_after)
 
         if is_mutation:
@@ -58,7 +61,7 @@ class InMemoryRateLimiter:
             self._purge_old(mut_queue, cutoff)
             if len(mut_queue) >= self.max_mutations_per_min:
                 oldest = mut_queue[0]
-                retry_after = max(1, int(60.0 - (current_time - oldest)))
+                retry_after = max(1, math.ceil(60.0 - (current_time - oldest)))
                 return RateLimitResult(allowed=False, retry_after=retry_after)
             mut_queue.append(current_time)
 

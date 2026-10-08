@@ -1,9 +1,14 @@
 import argparse
 from datetime import datetime, timezone
 import sys
-from uuid import UUID
+from pathlib import Path
+
+# Keep direct script invocation consistent with the migration CLI.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from app.core.config import settings
 from app.models.schemas_v2 import validate_canonical_uuid
@@ -13,6 +18,13 @@ def get_engine():
     db_url = settings.get_sync_database_url()
     if not db_url:
         print("ERROR: DATABASE_URL is not configured in environment.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        postgres = make_url(db_url).get_backend_name() == "postgresql"
+    except ArgumentError:
+        postgres = False
+    if not postgres:
+        print("ERROR: Operator commands require a PostgreSQL database URL.", file=sys.stderr)
         sys.exit(1)
     return create_engine(db_url)
 

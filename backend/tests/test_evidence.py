@@ -199,6 +199,12 @@ class TestEvidenceEvaluator(unittest.TestCase):
         self.assertEqual(res.answer.conclusion, Conclusion.insufficient)
         self.assertEqual(res.answer.discrepancy_units, -8)
 
+    def test_answer_retains_observation_microseconds(self):
+        stamp = self.now.replace(microsecond=123456) - timedelta(minutes=1)
+        obs = self._make_observation(observed_at=stamp)
+        answer = evaluate(EvaluationInput(enquiry=self._make_enquiry(), observation=obs)).answer
+        self.assertIn(stamp.isoformat().replace("+00:00", "Z"), answer.message)
+
     def test_old_check(self):
         old_time = self.now - timedelta(days=2)
         enquiry = self._make_enquiry(req_qty=6, claim=self.claim_a)

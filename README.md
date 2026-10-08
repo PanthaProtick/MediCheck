@@ -1,94 +1,47 @@
-# RxVerify v2 — Multi-User Medicine Availability Verification
+# Medicine Check â€” local SQLite demo
 
-RxVerify is an availability verification platform connecting caregiver requests to immutable, authenticated staff observations across participating pharmacies. It compares digital stock claims with physical observations, evaluating discrepancies and returning deterministic sufficient, insufficient, or unresolved outcomes qualified by exact observation timestamps.
+The UI demonstrates one caregiver request â†’ a simulated pharmacy check â†’ a qualified availability response. Choose **Caregiver** or **Pharmacy** from the home page. Each workspace has separate page state and controls.
 
-> **Operational Boundary Notice:** Physical stock checks verify current shelf count at the recorded instant. They do not reserve stock, guarantee availability on arrival, or provide clinical dispensation approvals.
+Local mode uses `/api/v1`, SQLite, the seeded `PHARM-A` pharmacy, and a backend-configured staff access key. Caregiver reads are public synthetic demo data. This is not private account isolation or a publicly hosted multi-user service.
 
----
+## Run locally
 
-## Key Features in v2
+Build from `frontend/`:
 
-- **Managed Authentication & Identity:** Clerk integration with JWT Bearer sessions (`/me`) and local conflict-safe identity mapping.
-- **Multi-Pharmacy Workflows:** Independent pharmacy queues (`PHARM-A`, `PHARM-B`) with server-enforced staff membership isolation.
-- **Strict Cross-Tenant Security:** Caregiver enquiries are strictly isolated; cross-owner read attempts return `404 Not Found` (never 403) to prevent UUID existence probing.
-- **Immutable Transactions & Replay Protection:** Conflicting observation submissions return `409 Conflict`; identical submissions from the same staff member are idempotent.
-- **Account-Bound Recovery:** `sessionStorage` recovery intents are strictly scoped to the local user UUID (`rxverify_intent_v2_${userId}`). No bearer tokens are persisted by the client.
-- **PostgreSQL / Neon Engine:** Schema migrations (`001_multi_user.sql`) and bootstrap seeding with full ACID transaction guarantees.
-- **Bounded Public Surface:** 16KiB body ceiling (HTTP 413) and single-worker sliding rate limiter (HTTP 429 + `Retry-After`).
-
----
-
-## Quickstart
-
-### 1. Build Frontend
 ```powershell
-cd frontend
-npm install
 npm run build
 ```
 
-### 2. Run Backend
-From `backend/`:
+From `backend/`, configure the demo environment before starting the server:
+
 ```powershell
+$env:APP_MODE = 'local'
+$env:ENV = 'demo'
+$env:DEMO_DATABASE_PATH = 'E:/Hackathon Demo/backend/data/demo.sqlite3'
+$env:DEMO_STAFF_TOKEN = '<choose-a-private-demo-token>'
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser.
 
-In local development mode without Clerk keys set, the application automatically uses `DevFallbackAuthBridge`, providing a one-click account switcher (Caregiver 1, Caregiver 2, Staff PHARM-A, Staff PHARM-B).
+Open [the home page](http://127.0.0.1:8000/). Use separate browser tabs for [the caregiver workspace](http://127.0.0.1:8000/?role=caregiver) and [the pharmacy workspace](http://127.0.0.1:8000/?role=staff). Enter the configured key only in the pharmacy screen. Reloading or leaving that page clears the in-memory credential.
 
----
+For frontend development, `npm run dev` proxies API calls to the backend on port 8000. Installed project dependencies are required; runtime use needs no external service.
 
-## Operator Commands
+## Verification
 
-### Database Migrations & Seeding (PostgreSQL / Neon)
-```powershell
-python backend/scripts/migrate_v2.py --seed
-```
+- Backend: from `backend/`, `.\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'`.
+- Frontend: from `frontend/`, `node --test tests/transport.test.js`, `npm run build`, and `npm run lint`.
+- Browser: from the repository root, `.\backend\.venv\Scripts\python.exe backend/scripts/check_browser.py`. Uses Chrome with a temporary profile and temporary SQLite database.
 
-Check database schema readiness:
-```powershell
-python backend/scripts/migrate_v2.py --check-only
-```
+See [the local repair validation](docs/local_repair_validation.md), [the demonstration runbook](docs/demo_runbook.md), and [the local API contracts](docs/api_contracts.md).
 
-### Staff Membership Management
-Grant pharmacy staff rights:
-```powershell
-python backend/scripts/manage_memberships.py grant caregiver1@example.com PHARM-A --role staff
-```
+## Hosted multi-user setup
 
-List active memberships:
-```powershell
-python backend/scripts/manage_memberships.py list
-```
+Hosted mode uses real Clerk registration/login, PostgreSQL (Neon), private caregiver requests, and operator-assigned pharmacy memberships. The backend selects the matching frontend mode through `/api/config`. Hosted mode does not expose anonymous local endpoints or accept demo tokens.
 
-Revoke staff rights:
-```powershell
-python backend/scripts/manage_memberships.py revoke caregiver1@example.com PHARM-A
-```
+Follow [the deployment setup guide](docs/deployment_setup.md). Supply your domain/DNS, Clerk production instance, Neon database, Git repository, and hosting account; migrate before starting the hosted server. The root `Dockerfile` and `render.yaml` deploy one combined frontend/API service. Runtime values are documented in `backend/.env.production.example`.
 
----
+See [hosted deployment contracts](docs/hosted_deployment_contracts.md) and [current hosted validation](docs/hosted_validation.md). Browser verification for hosted workspaces: from the repository root, `.\backend\.venv\Scripts\python.exe backend/scripts/check_browser.py --hosted`. This is an injected test harness, not a live Clerk/Neon acceptance test.
 
-## Verification & Automated Test Suites
+The old `frontend/src/AccountApp.jsx` and `components/AuthWrapper.jsx` are preserved inactive drafts and are not mounted or bundled by the production entry. Do not use their development-auth path for hosted deployment.
 
-### Backend Test Suite (83 Tests)
-Runs baseline v1 regression (56 tests), v2 contract freeze (6 tests), database migrations (2 tests), auth (6 tests), v2 API workflow (9 tests), and bounded surface (4 tests):
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m unittest discover tests
-```
-
-### Frontend Transport & Recovery Tests (22 Tests)
-Runs deadline bounds, v1 compatibility, v2 transport envelopes, reporter UUID intent matching, and user-scoped recovery:
-```powershell
-cd frontend
-node --test tests/transport.test.js
-```
-
----
-
-## Documentation
-
-- **[Multi-User Demo Runbook](docs/multi_user_demo_runbook.md):** 4-minute demonstration script, operator commands, and fault procedures.
-- **[Validation Matrix](docs/multi_user_validation.md):** Empirical test evidence, invariant verification matrix, and limits.
-- **[API Contracts v2](docs/api_contracts_v2.md):** Frozen JSON wire contracts and status code matrices for all `/api/v2` endpoints.
-- **[Implementation Plan](tasks/multi_user_implementation_plan.md):** Detailed technical plan for modules P00 through P11.
+Staff reports are immutable observations, not independent verification, a reservation, or clinical approval.

@@ -1,3 +1,5 @@
+> Historical implementation-track document. Superseded for current setup by [deployment_setup.md](deployment_setup.md) and [hosted_validation.md](hosted_validation.md). Older auth/config and email-based operator commands below are not current.
+
 # Multi-User Architecture Validation & Invariant Verification (P10)
 
 This document records the empirical validation evidence, invariant checks, and architectural boundary guarantees for the multi-user, multi-pharmacy RxVerify v2 system.

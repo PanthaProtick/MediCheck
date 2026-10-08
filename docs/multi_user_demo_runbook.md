@@ -1,3 +1,5 @@
+> Historical implementation-track document. Superseded for current setup by [deployment_setup.md](deployment_setup.md) and [hosted_validation.md](hosted_validation.md). Older auth/config and email-based operator commands below are not current.
+
 # Multi-User Demonstration Runbook (P11)
 
 This runbook provides the operational guide and rehearsal script for demonstrating the multi-user, multi-pharmacy RxVerify v2 system in under 4 minutes.

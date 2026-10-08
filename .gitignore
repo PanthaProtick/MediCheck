@@ -1,6 +1,8 @@
 ﻿# Environments & Secrets
 .env
-.env.local
+.env.*
+!.env.example
+!.env.production.example
 .env.*.local
 *.env
 
@@ -50,3 +52,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local visual verification output
+frontend/test-artifacts/

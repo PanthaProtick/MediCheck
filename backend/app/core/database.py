@@ -216,44 +216,30 @@ def create_pg_engine(
 
 
 def apply_pg_migrations(engine: Engine) -> None:
-    migration_file = Path(__file__).resolve().parent.parent.parent / "migrations" / "001_multi_user.sql"
-    if not migration_file.exists():
-        raise RuntimeError(f"Migration file not found at {migration_file}")
-
-    with migration_file.open("r", encoding="utf-8") as f:
-        sql_content = f.read()
-
+    if engine.dialect.name != "postgresql":
+        raise RuntimeError("Hosted migrations require PostgreSQL.")
+    directory = Path(__file__).resolve().parent.parent.parent / "migrations"
     try:
-        with engine.connect() as conn:
-            with conn.begin():
-                conn.execute(
-                    text(
-                        """
-                        CREATE TABLE IF NOT EXISTS schema_migrations (
-                            version TEXT PRIMARY KEY,
-                            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                        );
-                        """
-                    )
-                )
-                res = conn.execute(
-                    text("SELECT version FROM schema_migrations WHERE version = '001_multi_user';")
-                ).fetchone()
-                if res is None:
-                    # Execute individual statements
-                    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
-                    for stmt in statements:
+        with engine.begin() as conn:
+            # Serialize deployment migration jobs without a shared filesystem.
+            conn.execute(text("SELECT pg_advisory_xact_lock(71609241);"))
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );"""))
+            for name in ("001_multi_user", "002_observation_coherence"):
+                exists = conn.execute(text(
+                    "SELECT version FROM schema_migrations WHERE version = :version"
+                ), {"version": name}).fetchone()
+                if exists:
+                    continue
+                for stmt in (directory / (name + ".sql")).read_text().split(";"):
+                    if stmt.strip():
                         conn.execute(text(stmt))
-                    conn.execute(
-                        text("INSERT INTO schema_migrations (version, applied_at) VALUES ('001_multi_user', NOW());")
-                    )
+                conn.execute(text(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (:version, NOW())"
+                ), {"version": name})
     except SQLAlchemyError as exc:
-        raise AppError(
-            status_code=503,
-            code="storage_unavailable",
-            message="Failed to apply database migrations.",
-            fields=[],
-        ) from exc
+        raise AppError(503, "storage_unavailable", "Failed to apply database migrations.", []) from exc
 
 
 def seed_pg_database(engine: Engine, bootstrap_data: dict[str, Any] | None = None) -> None:
@@ -348,6 +334,23 @@ def check_pg_readiness(engine: Engine) -> None:
                     message="Database schema migration 001_multi_user is not applied.",
                     fields=[],
                 )
+            if engine.dialect.name == "postgresql":
+                hardened = conn.execute(text(
+                    "SELECT version FROM schema_migrations WHERE version = '002_observation_coherence';"
+                )).fetchone()
+                if hardened is None:
+                    raise AppError(503, "storage_unavailable", "Database migrations are incomplete.", [])
+            required_columns = {
+                "users": "id, auth_subject, active, created_at",
+                "pharmacies": "id, name, active, simulated",
+                "pharmacy_memberships": "user_id, pharmacy_id, role, active, created_at",
+                "products": "id, name, strength, form, unit",
+                "claims": "id, pharmacy_id, product_id, quantity, unit, recorded_at, loaded_at, source, simulated",
+                "enquiries": "id, owner_user_id, pharmacy_id, product_id, requested_quantity, unit, created_at, product_snapshot_json, claim_snapshot_json",
+                "observations": "enquiry_id, product_id, unit, kind, obtainable_quantity, observed_at, unresolved_reason, reported_by_user_id, submitted_at, basis, simulated",
+            }
+            for table, columns in required_columns.items():
+                conn.execute(text(f"SELECT {columns} FROM {table} LIMIT 0"))
             required = [
                 "users",
                 "pharmacies",

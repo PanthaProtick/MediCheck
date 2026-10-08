@@ -230,7 +230,7 @@ class ErrorResponse(WireModelV2):
 
 class HealthResponseV2(WireModelV2):
     status: Literal["ready"] = "ready"
-    storage: Literal["postgresql"] = "postgresql"
+    storage: Literal["postgresql", "sqlite"] = "postgresql"
 
 # Internal principals and workflow models
 class VerifiedIdentity(BaseModel):
